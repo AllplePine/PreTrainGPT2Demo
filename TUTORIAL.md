@@ -13,22 +13,27 @@ class MultiHeadAttention(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
-        self.key = nn.Linear(config.n_embd, config.n_embd, bias=False) # config.n_embd为词向量维度
+        # 定义三个线性层用于计算注意力
+        self.key = nn.Linear(config.n_embd, config.n_embd, bias=False)
         self.query = nn.Linear(config.n_embd, config.n_embd, bias=False)
         self.value = nn.Linear(config.n_embd, config.n_embd, bias=False)
-        self.register_buffer('attention_mask', torch.tril(torch.ones(config.block_size, config.block_size))) # register_buffer会自动成为模型中的参数，随着模型移动（gpu/cpu）而移动，但是不会随着梯度进行更新
+        # 注册一个三角形掩码缓冲区
+        self.register_buffer('attention_mask', torch.tril(torch.ones(config.block_size, config.block_size)))
         self.dropout = nn.Dropout(config.dropout)
         self.out_proj = nn.Linear(config.n_embd, config.n_embd, bias=False)
 
     def forward(self, x, attention_mask=None):
         B, T, C = x.size()
-        # transpose(1, 2)是为了能够并行计算多头注意力机制，(B,n_head,T,head_size)在矩阵运算时在（T,head_size）维度上进行，从而提高计算效率
         k = self.key(x).view(B, T, self.config.n_head, self.config.head_size).transpose(1, 2).contiguous()  # (B,n_head,T,head_size)
         q = self.query(x).view(B, T, self.config.n_head, self.config.head_size).transpose(1, 2).contiguous()  # (B,n_head,T,head_size)
         v = self.value(x).view(B, T, self.config.n_head, self.config.head_size).transpose(1, 2).contiguous()  # (B,n_head,T,head_size)
         # 计算注意力分数
         wei = q @ k.transpose(-2,-1) * (self.config.head_size ** -0.5)  # (B,n_head,T,T)
-        wei = wei.masked_fill(self.attention_mask[:T,:T] == 0, float('-inf'))  # (B,n_head,T,T)
+        if attention_mask is None: # 预训练
+            wei = wei.masked_fill(self.attention_mask[:T,:T] == 0, float('-inf'))  # (B,n_head,T,T)
+        else: # 微调
+            attention_mask = attention_mask.unsqueeze(1).unsqueeze(1).tile(1,1,T,1)
+            wei = wei.masked_fill(torch.tril(attention_mask) == 0, float('-inf'))  # (B,n_head,T,T)
         wei = F.softmax(wei, dim=-1)  # (B,n_head,T,T)
         wei = self.dropout(wei)
         
