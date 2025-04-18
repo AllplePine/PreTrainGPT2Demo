@@ -123,6 +123,24 @@ class PreTrainDataset(Dataset):
         self.tokenizer = AutoTokenizer.from_pretrained(config.tokenizer_path)
         self.eot = '<|endoftext|>'
         self.encoded_data = []
+        full_enconded_data = []
+        with open(self.data_path, 'r',encoding='utf-8') as f:
+            text = json.load(f)
+            for item in text:
+                _text =item['text'].strip().replace('<s>',"").replace('<\s>',"") # 针对使用的数据集进行的特殊处理，正常情况下应该另外单独写一个脚本处理
+                _text = _text+self.eot
+                full_enconded_data.extend(self.tokenizer.encode(_text))
+        for i in range(0,len(full_enconded_data),config.block_size):
+            if i+config.block_size <= len(full_enconded_data): # 最后不足一个block_size的直接舍弃
+                # 按照最大的block_size进行截断，生成一个一个的block
+                self.encoded_data.append(full_enconded_data[i:i+config.block_size])
+        self.encoded_data = torch.tensor(self.encoded_data)
+
+    def __len__(self):
+        return len(self.encoded_data)
+    
+    def __getitem__(self, idx):
+        return self.encoded_data[idx],self.encoded_data[idx]
 ```
 
 数据预处理步骤：
@@ -144,6 +162,9 @@ def train(model,optimizer,scheduler,train_dataloader,device,epoch):
         loss.backward()
         optimizer.step()
         scheduler.step()
+        total_loss += loss.item()
+        if idx % 100 == 0:
+            print(f'Epoch {epoch}, batch % 100 : {idx}, Loss: {loss.item()}')
 ```
 
 训练过程：
@@ -180,7 +201,7 @@ self.token_embedding_table.weight = self.lm_head.weight
 
 将输入嵌入和输出投影层的权重绑定，可以减少参数数量并提高模型性能(小模型时，学习时重要的地方不是position_embedding，但这里的参数比较多，因而可以使用这种方式减少占比提高学习效果)。
 
-### 预训练目标
+## 4. 预训练目标
 
 GPT-2的预训练目标是通过自回归语言建模（Autoregressive Language Modeling）来学习文本的生成。具体来说：
 
