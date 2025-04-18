@@ -49,11 +49,14 @@ class FeedForward(nn.Module):
         super().__init__()
         self.config = config
         self.net = nn.Sequential(
-            nn.Linear(config.n_embd, 4 * config.n_embd), # 注意升维4倍
+            nn.Linear(config.n_embd, 4 * config.n_embd),
             nn.GELU(),
             nn.Linear(4 * config.n_embd, config.n_embd),
             nn.Dropout(config.dropout)
         )
+
+    def forward(self, x):
+        return self.net(x)
 ```
 
 前馈网络对每个位置的表示进行非线性变换。
