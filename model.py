@@ -38,7 +38,11 @@ class MultiHeadAttention(nn.Module):
         v = self.value(x).view(B, T, self.config.n_head, self.config.head_size).transpose(1, 2).contiguous()  # (B,n_head,T,head_size)
         # 计算注意力分数
         wei = q @ k.transpose(-2,-1) * (self.config.head_size ** -0.5)  # (B,n_head,T,T)
-        wei = wei.masked_fill(self.attention_mask[:T,:T] == 0, float('-inf'))  # (B,n_head,T,T)
+        if attention_mask is None: # 预训练
+            wei = wei.masked_fill(self.attention_mask[:T,:T] == 0, float('-inf'))  # (B,n_head,T,T)
+        else: # 微调
+            attention_mask = attention_mask.unsqueeze(1).unsqueeze(1).tile(1,1,T,1)
+            wei = wei.masked_fill(torch.tril(attention_mask) == 0, float('-inf'))  # (B,n_head,T,T)
         wei = F.softmax(wei, dim=-1)  # (B,n_head,T,T)
         wei = self.dropout(wei)
         
